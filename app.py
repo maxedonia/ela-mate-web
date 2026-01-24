@@ -1,28 +1,24 @@
 import streamlit as st
 from PIL import Image
 from streamlit_image_comparison import image_comparison 
-from src.ela import process_ela, process_ela_delta, process_noise_analysis
+from src.ela import process_ela, process_ela_delta, process_noise_analysis, estimate_jpeg_quality
 
 # Set page to wide mode
-st.set_page_config(page_title="ELA Mate v5.4", layout="wide")
+st.set_page_config(page_title="ELA Mate v5.5", layout="wide")
 
 # --- CUSTOM CSS: COMPACT UI & BORDERS ---
 st.markdown("""
     <style>
-    /* 1. Reduce the massive top whitespace */
     .block-container {
         padding-top: 1rem;
         padding-bottom: 1rem;
     }
-    /* 2. Target Streamlit Images for Border */
     div[data-testid="stImage"] img {
         border: 1px solid #555;
     }
-    /* 3. Target the Comparison Component (Iframe) */
     iframe {
         border: 1px solid #555;
     }
-    /* 4. Tighten sidebar padding slightly */
     section[data-testid="stSidebar"] .block-container {
         padding-top: 2rem;
     }
@@ -58,28 +54,25 @@ def toggle_ela_mode():
     is_checked = st.session_state["_use_delta"]
     st.session_state.store['ela_mode'] = 'Delta' if is_checked else 'Standard'
 
-st.title("🕵️ ELA Mate v5.4")
+st.title("🕵️ ELA Mate v5.5")
 
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Settings")
-    
     s = st.session_state.store
 
-    # 1. Image Size (Moved to Top)
-    # Logic: Force scale to 1.0 if Slider is ON to prevent bugs
+    # 1. Image Size
     current_scale = 1.0 if s['show_slider'] else s['workspace_scale']
-    
     st.slider(
         "Image Size", 0.3, 1.0, 
         value=current_scale,
         key="_workspace_scale", 
         on_change=update_store, args=('workspace_scale',),
-        disabled=s['show_slider'], # Greyed out if active
+        disabled=s['show_slider'], 
         help="Adjust display size. (Locked to 100% when Comparison Slider is active)"
     )
 
-    # 2. Enable Comparison Slider (Directly Below)
+    # 2. Enable Comparison Slider
     st.toggle(
         "Enable Comparison Slider", 
         value=s['show_slider'], 
@@ -143,7 +136,20 @@ with st.sidebar:
 uploaded_file = st.file_uploader("Drag & drop an image here", type=['jpg', 'jpeg', 'png'])
 
 if uploaded_file:
+    # 1. Load Original
     original = Image.open(uploaded_file).convert("RGB")
+    
+    # 2. Detect Quality (Before converting to RGB strips the metadata)
+    # We open a fresh copy just for metadata reading
+    img_for_meta = Image.open(uploaded_file)
+    detected_q = estimate_jpeg_quality(img_for_meta)
+    
+    # Format the quality text
+    if detected_q:
+        quality_msg = f" | 🔍 Detected JPEG Quality: {detected_q}%"
+    else:
+        quality_msg = "" # Not a JPEG or couldn't read tables
+
     s = st.session_state.store
     
     # --- PROCESSING ---
@@ -176,7 +182,6 @@ if uploaded_file:
     
     with workspace:
         if s['show_slider']:
-            # Interactive Slider (Locked to Full Width)
             image_comparison(
                 img1=original,
                 img2=analysis_blended, 
@@ -187,6 +192,7 @@ if uploaded_file:
                 make_responsive=True,
                 in_memory=True
             )
+            # Caption for Slider Mode (Below the iframe)
+            st.caption(f"{label_text} (Opacity: {int(opacity*100)}%){quality_msg}")
         else:
-            # Static Image (Resizable)
-            st.image(analysis_blended, caption=f"{label_text} (Opacity: {int(opacity*100)}%)", use_container_width=True)
+            st.image(analysis_blended, caption=f"{label_text} (Opacity: {int(opacity*100)}%){quality_msg}", use_container_width=True)

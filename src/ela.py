@@ -100,3 +100,62 @@ def process_noise_analysis(image_input, intensity=50):
     # This feels intuitive (Warped areas look like "voids").
     
     return Image.fromarray(variance_enhanced)
+    
+def estimate_jpeg_quality(img):
+    """
+    Reverse-engineers the JPEG Quality Factor from the quantization tables.
+    Returns an integer (1-100) or None if not a JPEG.
+    """
+    if not img.format == 'JPEG' or not hasattr(img, 'quantization') or img.quantization is None:
+        return None
+
+    # Standard JPEG Luminance Quantization Table (Quality 50)
+    # Source: JPEG Standard (ITU-T T.81)
+    std_luminance_quant_tbl = [
+        16, 11, 10, 16, 24, 40, 51, 61,
+        12, 12, 14, 19, 26, 58, 60, 55,
+        14, 13, 16, 24, 40, 57, 69, 56,
+        14, 17, 22, 29, 51, 87, 80, 62,
+        18, 22, 37, 56, 68, 109, 103, 77,
+        24, 35, 55, 64, 81, 104, 113, 92,
+        49, 64, 78, 87, 103, 121, 120, 101,
+        72, 92, 95, 98, 112, 100, 103, 99
+    ]
+
+    try:
+        # Get the image's quantization table (Index 0 = Luminance)
+        # PIL returns a dictionary of tables (0, 1, etc) or a flat list depending on version
+        # Usually it's {0: [64 ints], 1: [64 ints]}
+        qt = img.quantization
+        if isinstance(qt, dict):
+            curr_table = qt[0]
+        else:
+            curr_table = qt[:64] # Fallback if flat list
+
+        # Calculate the scaling factor based on the first few coefficients
+        # (Averaging all of them is more robust)
+        # S = (Current_Table_Value * 100) / Standard_Table_Value
+        
+        summ = 0
+        for i in range(64):
+            # Avoid division by zero issues
+            val = curr_table[i]
+            std = std_luminance_quant_tbl[i]
+            summ += (val * 100.0) / std
+        
+        # Average scaling factor
+        avg_scaling_factor = summ / 64.0
+        
+        # Reverse the JPEG quality formula:
+        # If Q >= 50: S = 200 - 2Q  -->  2Q = 200 - S  --> Q = 100 - S/2
+        # If Q < 50:  S = 5000/Q    -->  Q = 5000/S
+        
+        if avg_scaling_factor <= 100:
+            quality = 100.0 - (avg_scaling_factor / 2.0)
+        else:
+            quality = 5000.0 / avg_scaling_factor
+            
+        return int(round(quality))
+
+    except Exception:
+        return None

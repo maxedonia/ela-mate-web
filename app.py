@@ -1,15 +1,36 @@
 import streamlit as st
 from PIL import Image
-import numpy as np
-from streamlit_image_coordinates import streamlit_image_coordinates
+from streamlit_image_comparison import image_comparison 
 from src.ela import process_ela, process_ela_delta, process_noise_analysis
 
 # Set page to wide mode
-st.set_page_config(page_title="ELA Mate v4.7", layout="wide")
+st.set_page_config(page_title="ELA Mate v5.4", layout="wide")
+
+# --- CUSTOM CSS: COMPACT UI & BORDERS ---
+st.markdown("""
+    <style>
+    /* 1. Reduce the massive top whitespace */
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    /* 2. Target Streamlit Images for Border */
+    div[data-testid="stImage"] img {
+        border: 1px solid #555;
+    }
+    /* 3. Target the Comparison Component (Iframe) */
+    iframe {
+        border: 1px solid #555;
+    }
+    /* 4. Tighten sidebar padding slightly */
+    section[data-testid="stSidebar"] .block-container {
+        padding-top: 2rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # --- MEMORY STORE ---
 default_settings = {
-    # Consolidated ELA Params
     'ela_mode': 'Standard', 
     'ela_quality': 90,
     'ela_scale': 15,
@@ -17,18 +38,13 @@ default_settings = {
     'delta_low': 85, 
     'delta_scale': 20, 
     'delta_denoise': 0,
-    
-    # Noise Params
     'noise_gain': 25,
-    
-    # Global Settings
     'mode': "Error Level Analysis",
     'workspace_scale': 0.7, 
-    'split_pos': 50,
-    'overlay_opacity': 1.0 
+    'overlay_opacity': 1.0,
+    'show_slider': True 
 }
 
-# Initialize & Heal Store
 if 'store' not in st.session_state:
     st.session_state.store = default_settings.copy()
 for key, value in default_settings.items():
@@ -38,67 +54,90 @@ for key, value in default_settings.items():
 def update_store(key):
     st.session_state.store[key] = st.session_state[f"_{key}"]
 
-st.title("🕵️ ELA Mate v4.7")
+def toggle_ela_mode():
+    is_checked = st.session_state["_use_delta"]
+    st.session_state.store['ela_mode'] = 'Delta' if is_checked else 'Standard'
+
+st.title("🕵️ ELA Mate v5.4")
 
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # 1. Main Mode Selector
+    s = st.session_state.store
+
+    # 1. Image Size (Moved to Top)
+    # Logic: Force scale to 1.0 if Slider is ON to prevent bugs
+    current_scale = 1.0 if s['show_slider'] else s['workspace_scale']
+    
+    st.slider(
+        "Image Size", 0.3, 1.0, 
+        value=current_scale,
+        key="_workspace_scale", 
+        on_change=update_store, args=('workspace_scale',),
+        disabled=s['show_slider'], # Greyed out if active
+        help="Adjust display size. (Locked to 100% when Comparison Slider is active)"
+    )
+
+    # 2. Enable Comparison Slider (Directly Below)
+    st.toggle(
+        "Enable Comparison Slider", 
+        value=s['show_slider'], 
+        key="_show_slider", 
+        on_change=update_store, args=('show_slider',),
+        help="Toggle ON for interactive slider. OFF allows resizing the image."
+    )
+
+    st.markdown("---")
+    
+    # 3. Analysis Method
     mode = st.radio(
         "Analysis Method", 
         ["Error Level Analysis", "Noise Variance (Warp)"],
-        index=["Error Level Analysis", "Noise Variance (Warp)"].index(st.session_state.store['mode']),
+        index=["Error Level Analysis", "Noise Variance (Warp)"].index(s['mode']),
         key="_mode", on_change=update_store, args=('mode',),
         help="Choose the forensic algorithm to apply."
     )
-
-    st.markdown("---")
     
-    s = st.session_state.store
-    
-    # 2. Dynamic Parameters
+    # 4. Parameters Section
     if s['mode'] == "Error Level Analysis":
-        use_delta = st.checkbox("Enable Delta (Dual-Pass)", 
-                                value=(s['ela_mode'] == 'Delta'),
-                                help="Check to compare two different compression levels. Good for finding banding artifacts.")
-        
-        s['ela_mode'] = 'Delta' if use_delta else 'Standard'
+        st.markdown("### Parameters: ELA")
         
         if s['ela_mode'] == 'Standard':
             st.info("ℹ️ **Standard ELA:** Highlights high-error blocks.")
-            st.slider("JPEG Quality", 50, 100, value=s['ela_quality'], key="_ela_quality", on_change=update_store, args=('ela_quality',),
-                      help="Compression level to compare against (50-100).")
-            st.slider("Intensity", 1, 100, value=s['ela_scale'], key="_ela_scale", on_change=update_store, args=('ela_scale',),
-                      help="Brightness of the error artifacts.")
+        else:
+            st.info("ℹ️ **Delta ELA:** Highlights instability between qualities.")
+
+        st.checkbox("Enable Delta (Dual-Pass)", 
+                    value=(s['ela_mode'] == 'Delta'),
+                    key="_use_delta", 
+                    on_change=toggle_ela_mode,
+                    help="Check to compare two different compression levels.")
+        
+        if s['ela_mode'] == 'Standard':
+            st.slider("JPEG Quality", 50, 100, value=s['ela_quality'], key="_ela_quality", on_change=update_store, args=('ela_quality',), help="Compression level to compare against.")
+            st.slider("Intensity", 1, 100, value=s['ela_scale'], key="_ela_scale", on_change=update_store, args=('ela_scale',), help="Brightness of the artifacts.")
             
         else: # Delta Mode
-            st.info("ℹ️ **Delta ELA:** Highlights instability between qualities.")
             c1, c2 = st.columns(2)
             with c1: st.slider("High Q", 80, 100, value=s['delta_high'], key="_delta_high", on_change=update_store, args=('delta_high',), help="Upper quality reference.")
             with c2: st.slider("Low Q", 50, 90, value=s['delta_low'], key="_delta_low", on_change=update_store, args=('delta_low',), help="Lower quality reference.")
-            
             st.slider("Delta Intensity", 1, 100, value=s['delta_scale'], key="_delta_scale", on_change=update_store, args=('delta_scale',), help="Amplification of difference.")
-            st.slider("Static Filter (Denoise)", 0, 100, value=s['delta_denoise'], key="_delta_denoise", on_change=update_store, args=('delta_denoise',), help="Blur to remove grain and focus on structure.")
+            st.slider("Static Filter (Denoise)", 0, 100, value=s['delta_denoise'], key="_delta_denoise", on_change=update_store, args=('delta_denoise',), help="Blur to remove grain.")
 
     elif s['mode'] == "Noise Variance (Warp)":
+        st.markdown("### Parameters: Noise")
         st.info("ℹ️ **Noise Variance:** Look for DARK voids in the static.")
-        st.slider("Noise Gain", 1, 100, value=s['noise_gain'], key="_noise_gain", on_change=update_store, args=('noise_gain',),
-                  help="Increases contrast of the noise map.")
-
-    # 3. Opacity Slider
-    st.slider(
-        "Analysis Overlay Opacity", 0.0, 1.0, value=s['overlay_opacity'], 
-        key="_overlay_opacity", on_change=update_store, args=('overlay_opacity',),
-        help="0% = Show Original, 100% = Show Analysis. Use this to fade the heatmap over the original photo."
-    )
+        st.slider("Noise Gain", 1, 100, value=s['noise_gain'], key="_noise_gain", on_change=update_store, args=('noise_gain',), help="Increases contrast.")
 
     st.markdown("---")
-    
-    # 4. Image Size
-    st.slider("Image Size", 0.3, 1.0, value=s['workspace_scale'], 
-              key="_workspace_scale", on_change=update_store, args=('workspace_scale',),
-              help="Adjust the display size of the image.")
+
+    # 5. Opacity
+    st.slider(
+        "Opacity", 0.0, 1.0, value=s['overlay_opacity'], 
+        key="_overlay_opacity", on_change=update_store, args=('overlay_opacity',),
+        help="0% = Show Original, 100% = Show Analysis."
+    )
 
 # --- MAIN WINDOW ---
 uploaded_file = st.file_uploader("Drag & drop an image here", type=['jpg', 'jpeg', 'png'])
@@ -107,7 +146,7 @@ if uploaded_file:
     original = Image.open(uploaded_file).convert("RGB")
     s = st.session_state.store
     
-    # --- 1. PROCESSING ---
+    # --- PROCESSING ---
     if s['mode'] == "Error Level Analysis":
         if s['ela_mode'] == 'Standard':
             analysis = process_ela(original, s['ela_quality'], s['ela_scale'])
@@ -120,66 +159,34 @@ if uploaded_file:
         analysis = analysis.convert("RGB")
         label_text = "Noise Variance"
 
-    # --- 2. OPACITY BLENDING ---
+    # --- OPACITY BLENDING ---
     opacity = s['overlay_opacity']
-    
     if opacity < 1.0:
         analysis_blended = Image.blend(original, analysis, opacity)
     else:
         analysis_blended = analysis
 
-    # --- 3. COMPOSITING ---
+    # --- LAYOUT ---
+    scale = 1.0 if s['show_slider'] else s['workspace_scale']
     
-    scale = s['workspace_scale']
-    
-    # LAYOUT FIX: Left Alignment
     if scale >= 0.99:
         workspace = st.container()
     else:
-        # Create two columns: [Content, Spacer]
-        # This pushes the content to the left side
         workspace, _ = st.columns([scale, 1.0 - scale])
     
     with workspace:
-        st.markdown("### Interactive Analysis")
-        
-        # A. INSTRUCTION TEXT
-        st.markdown(
-            "<div style='text-align: center; color: #888; margin-bottom: 5px;'>"
-            "⬇ Click anywhere on the image to move the comparison slider ⬇"
-            "</div>", 
-            unsafe_allow_html=True
-        )
-
-        # B. PREPARE COMPOSITE
-        w, h = original.size
-        cut_x = int(w * (s['split_pos'] / 100))
-        
-        arr_a = np.array(original)
-        arr_b = np.array(analysis_blended)
-        
-        composite = arr_b.copy()
-        composite[:, :cut_x, :] = arr_a[:, :cut_x, :]
-        
-        # White Line (2px)
-        if cut_x > 0 and cut_x < w:
-            composite[:, cut_x-2:cut_x+2, :] = [255, 255, 255]
-        
-        composite_pil = Image.fromarray(composite)
-
-        # C. RENDER CLICKABLE IMAGE
-        value = streamlit_image_coordinates(composite_pil, use_column_width=True)
-
-        # D. HANDLE CLICKS
-        if value is not None:
-            clicked_x_pixel = value['x']
-            original_width = value['width'] 
-            
-            if original_width > 0:
-                new_split = int((clicked_x_pixel / original_width) * 100)
-                
-                if abs(new_split - s['split_pos']) > 1:
-                    st.session_state.store['split_pos'] = new_split
-                    st.rerun()
-        
-        st.caption(f"Original ({s['split_pos']}%) ↔ {label_text} ({100-s['split_pos']}%)")
+        if s['show_slider']:
+            # Interactive Slider (Locked to Full Width)
+            image_comparison(
+                img1=original,
+                img2=analysis_blended, 
+                label1="Original",
+                label2=label_text,
+                starting_position=50,
+                show_labels=True,
+                make_responsive=True,
+                in_memory=True
+            )
+        else:
+            # Static Image (Resizable)
+            st.image(analysis_blended, caption=f"{label_text} (Opacity: {int(opacity*100)}%)", use_container_width=True)

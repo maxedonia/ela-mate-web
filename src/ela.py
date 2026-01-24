@@ -67,33 +67,36 @@ def process_ela_delta(image_input, quality_high=95, quality_low=85, scale=10, de
 
 def process_noise_analysis(image_input, intensity=50):
     """
-    Noise Residue Analysis (Warp Detector).
-    Facetune/Liquify destroys natural noise. This highlights those 'silent' areas.
+    Local Noise Variance Analysis.
+    Detects areas where natural sensor noise has been destroyed by warping/smoothing.
+    
+    Returns:
+    A map where BRIGHT = High Noise (Original), DARK = Low Noise (Potentially Warped).
     """
-    # Convert to OpenCV format (grayscale)
-    img_cv = np.array(image_input.convert('L'))
+    # 1. Convert to Grayscale
+    img = np.array(image_input.convert('L'))
     
-    # 1. Isolate the Noise: Subtract a smoothed version from the original
-    # This leaves ONLY the high-frequency grain.
-    denoised = cv2.medianBlur(img_cv, 3)
-    noise_map = cv2.absdiff(img_cv, denoised)
+    # 2. Compute Local Variance
+    # Var(X) = E[X^2] - (E[X])^2
+    # We use a 3x3 kernel to look at very fine noise patterns
+    kernel_size = (3, 3)
     
-    # 2. Invert: We want to see where noise is MISSING (Warped areas = Black holes in noise map)
-    # But for visualization, let's make the "Missing Noise" areas BRIGHT.
-    # So we calculate local variance. Low variance = Edited.
+    mean = cv2.boxFilter(img.astype(float), -1, kernel_size)
+    sqr_mean = cv2.boxFilter(img.astype(float)**2, -1, kernel_size)
     
-    # Calculate local variance (how much noise is in this 5x5 block?)
-    local_mean = cv2.blur(noise_map, (5, 5))
-    local_sqr_mean = cv2.blur(noise_map**2, (5, 5))
-    local_var = local_sqr_mean - local_mean**2
+    variance = sqr_mean - (mean**2)
     
-    # Normalize to 0-255
-    norm_var = cv2.normalize(local_var, None, 0, 255, cv2.NORM_MINMAX)
-    norm_var = 255 - norm_var # Invert: Bright = Low Variance (Smoothed/Edited)
+    # 3. Enhance Visibility
+    # Variance is usually a very small number, so we need to stretch it to 0-255
+    # We use the 'intensity' slider to control the "Gain" of the noise
+    gain = intensity * 2.0
+    variance_enhanced = variance * gain
     
-    # Thresholding to clean it up based on intensity
-    # Intensity 50 -> Threshold 128. Higher intensity -> Lower threshold (show more).
-    thresh = 255 - int(intensity * 2.0)
-    _, result = cv2.threshold(norm_var, thresh, 255, cv2.THRESH_TOZERO)
+    # Clip to valid range
+    variance_enhanced = np.clip(variance_enhanced, 0, 255).astype(np.uint8)
     
-    return Image.fromarray(result.astype('uint8'))
+    # 4. Invert? 
+    # Standard forensics: White = Noise, Black = Edit. 
+    # This feels intuitive (Warped areas look like "voids").
+    
+    return Image.fromarray(variance_enhanced)

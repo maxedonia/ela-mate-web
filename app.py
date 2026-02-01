@@ -4,7 +4,7 @@ from streamlit_image_comparison import image_comparison
 from src.ela import process_ela, process_ela_delta, process_noise_analysis, estimate_jpeg_quality
 
 # Set page to wide mode
-st.set_page_config(page_title="ELA Mate v5.5", layout="wide")
+st.set_page_config(page_title="ELA Mate v5.6", layout="wide")
 
 # --- CUSTOM CSS: COMPACT UI & BORDERS ---
 st.markdown("""
@@ -30,15 +30,17 @@ default_settings = {
     'ela_mode': 'Standard', 
     'ela_quality': 90,
     'ela_scale': 15,
+    'ela_denoise': 0,    # NEW: Denoise for Standard ELA
     'delta_high': 95, 
     'delta_low': 85, 
     'delta_scale': 20, 
     'delta_denoise': 0,
     'noise_gain': 25,
+    'noise_denoise': 0,  # NEW: Denoise for Noise Mode
     'mode': "Error Level Analysis",
     'workspace_scale': 0.7, 
     'overlay_opacity': 1.0,
-    'show_slider': True 
+    'show_slider': False # UPDATED: Defaults to False (Static View)
 }
 
 if 'store' not in st.session_state:
@@ -54,7 +56,7 @@ def toggle_ela_mode():
     is_checked = st.session_state["_use_delta"]
     st.session_state.store['ela_mode'] = 'Delta' if is_checked else 'Standard'
 
-st.title("🕵️ ELA Mate v5.5")
+st.title("🕵️ ELA Mate v5.6")
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -110,6 +112,8 @@ with st.sidebar:
         if s['ela_mode'] == 'Standard':
             st.slider("JPEG Quality", 50, 100, value=s['ela_quality'], key="_ela_quality", on_change=update_store, args=('ela_quality',), help="Compression level to compare against.")
             st.slider("Intensity", 1, 100, value=s['ela_scale'], key="_ela_scale", on_change=update_store, args=('ela_scale',), help="Brightness of the artifacts.")
+            # NEW: Denoise for Standard ELA
+            st.slider("Static Filter (Denoise)", 0, 100, value=s['ela_denoise'], key="_ela_denoise", on_change=update_store, args=('ela_denoise',), help="Blur to remove grain and focus on structure.")
             
         else: # Delta Mode
             c1, c2 = st.columns(2)
@@ -122,6 +126,8 @@ with st.sidebar:
         st.markdown("### Parameters: Noise")
         st.info("ℹ️ **Noise Variance:** Look for DARK voids in the static.")
         st.slider("Noise Gain", 1, 100, value=s['noise_gain'], key="_noise_gain", on_change=update_store, args=('noise_gain',), help="Increases contrast.")
+        # NEW: Denoise for Noise Variance
+        st.slider("Static Filter (Denoise)", 0, 100, value=s['noise_denoise'], key="_noise_denoise", on_change=update_store, args=('noise_denoise',), help="Smooths the static to make voids clearer.")
 
     st.markdown("---")
 
@@ -139,29 +145,29 @@ if uploaded_file:
     # 1. Load Original
     original = Image.open(uploaded_file).convert("RGB")
     
-    # 2. Detect Quality (Before converting to RGB strips the metadata)
-    # We open a fresh copy just for metadata reading
+    # 2. Detect Quality
     img_for_meta = Image.open(uploaded_file)
     detected_q = estimate_jpeg_quality(img_for_meta)
     
-    # Format the quality text
     if detected_q:
         quality_msg = f" | 🔍 Detected JPEG Quality: {detected_q}%"
     else:
-        quality_msg = "" # Not a JPEG or couldn't read tables
+        quality_msg = ""
 
     s = st.session_state.store
     
     # --- PROCESSING ---
     if s['mode'] == "Error Level Analysis":
         if s['ela_mode'] == 'Standard':
-            analysis = process_ela(original, s['ela_quality'], s['ela_scale'])
+            # Updated to pass ela_denoise
+            analysis = process_ela(original, s['ela_quality'], s['ela_scale'], s['ela_denoise'])
             label_text = "Standard ELA"
         else:
             analysis = process_ela_delta(original, s['delta_high'], s['delta_low'], s['delta_scale'], s['delta_denoise'])
             label_text = "Delta Analysis"
     else:
-        analysis = process_noise_analysis(original, intensity=s['noise_gain'])
+        # Updated to pass noise_denoise
+        analysis = process_noise_analysis(original, intensity=s['noise_gain'], denoise=s['noise_denoise'])
         analysis = analysis.convert("RGB")
         label_text = "Noise Variance"
 
@@ -192,7 +198,6 @@ if uploaded_file:
                 make_responsive=True,
                 in_memory=True
             )
-            # Caption for Slider Mode (Below the iframe)
             st.caption(f"{label_text} (Opacity: {int(opacity*100)}%){quality_msg}")
         else:
             st.image(analysis_blended, caption=f"{label_text} (Opacity: {int(opacity*100)}%){quality_msg}", use_container_width=True)

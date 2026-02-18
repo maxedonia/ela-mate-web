@@ -69,5 +69,5 @@ ELA Mate is intended for digital literacy and educational use only. It is not de
 
 ## Related
 
-- [ELA Mate v2](https://github.com/maxedonia/ela_mate) — the original command-line version, which generates animated GIFs across 99 compression levels
+- [ELA Mate v2](https://github.com/maxedonia/ela_mate) *(archived)* — the original command-line version, which generates animated GIFs across 99 compression levels
 - [29a.ch Photo Forensics](https://29a.ch/photo-forensics/) — a broader suite of forensic analysis tools

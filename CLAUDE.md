@@ -6,6 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ELA Mate is a Streamlit-based forensic image analysis tool that detects digital image tampering and re-compression artifacts. It uses Error Level Analysis (ELA), Delta ELA, and Noise Variance Analysis to identify suspicious regions in images.
 
+**GitHub repo:** `ela-mate-web` (https://github.com/maxedonia/ela-mate-web)
+The local working directory may be named `ELA_MATE_V3` — this is the same project. The canonical name is `ela-mate-web`.
+
 ## Commands
 
 ### Setup

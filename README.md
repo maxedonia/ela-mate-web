@@ -33,6 +33,9 @@ All modes include an optional **Static Filter (Denoise)** slider that applies No
 Requires Python 3.8+.
 
 ```bash
+git clone https://github.com/maxedonia/ela-mate-web.git
+cd ela-mate-web
+
 python -m venv venv
 source venv/Scripts/activate   # Windows (bash)
 # or: source venv/bin/activate  (macOS/Linux)

@@ -3,3 +3,4 @@ Pillow
 numpy
 scikit-image
 opencv-python-headless
+streamlit-image-comparison
